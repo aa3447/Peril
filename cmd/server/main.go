@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -12,6 +13,7 @@ import (
 
 func main() {
 	fmt.Println("Starting Peril server...")
+	go exitFromOSSignal()
 
 	connectionURL := "amqp://guest:guest@localhost:5672/"
 	connection , err := amqp.Dial(connectionURL)
@@ -29,19 +31,51 @@ func main() {
 	defer channel.Close()
 
 	fmt.Println("Connected to RabbitMQ successfully.")
+	gamelogic.PrintServerHelp()
+	for {
+		commands := gamelogic.GetInput()
+		if len(commands) > 0 {
+			switch commands[0]{
+				case "pause":
+					fmt.Println("Pausing the game...")
+					if publishPlayingState(channel, true) != nil{
+						fmt.Println("Failed to publish pause state")
+					}
+					fmt.Println("Game paused")
+				case "resume":
+					fmt.Println("Resuming the game...")
+					publishPlayingState(channel, false)
+					if publishPlayingState(channel, true) != nil{
+						fmt.Println("Failed to publish pause state")
+					}
+					fmt.Println("Games resumed")
+				case "quit":
+					fmt.Println("Quitting the server...")
+					return
+				default:
+					fmt.Println("Unknown command")
+					gamelogic.PrintServerHelp()
+			}
+		}
+	}
 
+}
+
+func publishPlayingState(channel *amqp.Channel, isPaused bool) error{
 	playState := routing.PlayingState{
-		IsPaused: true,
+		IsPaused: isPaused,
 	}
-	err = pubsub.PublishJSON(channel,routing.ExchangePerilDirect, routing.PauseKey, playState)
+	err := pubsub.PublishJSON(channel,routing.ExchangePerilDirect, routing.PauseKey, playState)
 	if err != nil{
-		fmt.Printf("Failed to publish playing state: %v\n", err)
-		return
+		return fmt.Errorf("failed to publish playing state: %v", err)
 	}
+	return nil
+}
 
+func exitFromOSSignal(){
 	osSignal := make(chan os.Signal, 1)
 	signal.Notify(osSignal, os.Interrupt)
 	<-osSignal
-
 	fmt.Print("\nShutting down Peril server...\n")
+	os.Exit(0)
 }
