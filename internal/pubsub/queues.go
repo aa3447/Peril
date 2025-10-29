@@ -12,7 +12,7 @@ const (
 	QueueTypeTransient SimpleQueueType = 2
 )
 
-func DeclareAndBindTransient(
+func DeclareAndBindQueue(
 	conn *amqp.Connection,
 	exchange,
 	queueName,

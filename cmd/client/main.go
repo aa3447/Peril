@@ -30,12 +30,54 @@ func main() {
 	}
 
 	queueName := routing.PauseKey + "." + username
-	_, _, err = pubsub.DeclareAndBindTransient(connection, routing.ExchangePerilDirect,queueName,routing.PauseKey,pubsub.QueueTypeTransient)
+	_, _, err = pubsub.DeclareAndBindQueue(connection, routing.ExchangePerilDirect,queueName,routing.PauseKey,pubsub.QueueTypeTransient)
 	if err != nil{
 		fmt.Printf("Failed to declare and bind queue: %v\n", err)
 		return
 	}
 
+	go exitFromOSSignal()
+	gameState := gamelogic.NewGameState(username)
+	for {
+		commands := gamelogic.GetInput()
+		lenCommands := len(commands)
+		if lenCommands > 0 {
+			switch commands[0]{
+				case "spawn":
+					if lenCommands < 3{
+						fmt.Println("Not enough arguments for spawn command")
+						continue
+					}
+					if gameState.CommandSpawn(commands) != nil{
+						fmt.Println("Failed to spawn unit")
+					}
+				case "move":
+					if lenCommands < 3{
+						fmt.Println("Not enough arguments for move command")
+						continue
+					}
+					_, err := gameState.CommandMove(commands)
+					if err != nil{
+						fmt.Println("Failed to move unit:", err)
+					}
+				case "status":
+					gameState.CommandStatus()
+				case "help":
+					gamelogic.PrintClientHelp()
+				case "spam":
+					fmt.Println("Spamming not allowed yet!")
+				case "quit":
+					gamelogic.PrintQuit()
+					return
+				default:
+					fmt.Println("Unknown command")
+					gamelogic.PrintClientHelp()
+			}
+		}
+	}
+}
+
+func exitFromOSSignal(){
 	osSignal := make(chan os.Signal, 1)
 	signal.Notify(osSignal, os.Interrupt)
 	<-osSignal

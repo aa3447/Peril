@@ -13,7 +13,6 @@ import (
 
 func main() {
 	fmt.Println("Starting Peril server...")
-	go exitFromOSSignal()
 
 	connectionURL := "amqp://guest:guest@localhost:5672/"
 	connection , err := amqp.Dial(connectionURL)
@@ -30,7 +29,16 @@ func main() {
 	}
 	defer channel.Close()
 
+	queueName := "game_logs"
+	key := queueName + ".*"
+	_, _, err = pubsub.DeclareAndBindQueue(connection, routing.ExchangePerilTopic,queueName,key,pubsub.QueueTypeDurable)
+	if err != nil{
+		fmt.Printf("Failed to declare and bind queue: %v\n", err)
+		return
+	}
+
 	fmt.Println("Connected to RabbitMQ successfully.")
+	go exitFromOSSignal()
 	gamelogic.PrintServerHelp()
 	for {
 		commands := gamelogic.GetInput()
@@ -40,13 +48,14 @@ func main() {
 					fmt.Println("Pausing the game...")
 					if publishPlayingState(channel, true) != nil{
 						fmt.Println("Failed to publish pause state")
+						continue
 					}
 					fmt.Println("Game paused")
 				case "resume":
 					fmt.Println("Resuming the game...")
-					publishPlayingState(channel, false)
-					if publishPlayingState(channel, true) != nil{
+					if publishPlayingState(channel, false) != nil{
 						fmt.Println("Failed to publish pause state")
+						continue
 					}
 					fmt.Println("Games resumed")
 				case "quit":
