@@ -2,6 +2,7 @@ package pubsub
 
 import (
 	"fmt"
+	"encoding/json"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -25,7 +26,6 @@ func DeclareAndBindQueue(
 	if err != nil {
 		return nil, amqp.Queue{}, fmt.Errorf("failed to open channel: %v", err)
 	}
-	defer channel.Close()
 
 	switch queueType{
 		case QueueTypeDurable:
@@ -52,4 +52,50 @@ func DeclareAndBindQueue(
 	}
 
 	return channel, queue, nil
+}
+
+// SubscribeJSON sets up a subscription to a queue and processes incoming messages using the provided handler function.
+// Declares and binds the queue if it does not already exist.
+// Accepts any struct type T for message deserialization.
+func SubscribeJSON[T any](
+    conn *amqp.Connection,
+    exchange,
+    queueName,
+    key string,
+    queueType SimpleQueueType, // an enum to represent "durable" or "transient"
+    handler func(T),
+) error {
+	channel, queue, err := DeclareAndBindQueue(conn, exchange, queueName, key, queueType)
+	if err != nil {
+		return fmt.Errorf("failed to declare and bind queue: %v", err)
+	}
+
+	msgs, err := channel.Consume(
+		queue.Name,
+		"",
+		false,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to receive messages: %v", err)
+	}
+
+	go func(){
+		for msg := range msgs{
+			var genericMsgStruct T
+			err := json.Unmarshal(msg.Body, &genericMsgStruct)
+			if err != nil{
+				fmt.Printf("Failed to unmarshal message: %v\n", err)
+				msg.Nack(false, false)
+				continue
+			}
+			handler(genericMsgStruct)
+			msg.Ack(false)
+		}
+	}()
+
+	return nil
 }

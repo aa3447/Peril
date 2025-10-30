@@ -31,11 +31,12 @@ func main() {
 
 	queueName := "game_logs"
 	key := queueName + ".*"
-	_, _, err = pubsub.DeclareAndBindQueue(connection, routing.ExchangePerilTopic,queueName,key,pubsub.QueueTypeDurable)
+	queueChannel, _, err := pubsub.DeclareAndBindQueue(connection, routing.ExchangePerilTopic,queueName,key,pubsub.QueueTypeDurable)
 	if err != nil{
 		fmt.Printf("Failed to declare and bind queue: %v\n", err)
 		return
 	}
+	defer queueChannel.Close()
 
 	fmt.Println("Connected to RabbitMQ successfully.")
 	go exitFromOSSignal()
