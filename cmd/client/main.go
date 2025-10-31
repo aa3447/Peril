@@ -105,17 +105,22 @@ func exitFromOSSignal(){
 	os.Exit(0)
 }
 
-func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState){
-	return func(ps routing.PlayingState){
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState)(pubsub.AnkType){
+	return func(ps routing.PlayingState)(pubsub.AnkType){
 		defer fmt.Print("> ")
 		gs.HandlePause(ps)
+		return pubsub.Ack
 	}
 }
 
-func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove){
-	return func(am gamelogic.ArmyMove){
+func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove)(pubsub.AnkType){
+	return func(am gamelogic.ArmyMove)(pubsub.AnkType){
 		defer fmt.Print("> ")
-		gs.HandleMove(am)
+		moveOutCome := gs.HandleMove(am)
+		if moveOutCome == gamelogic.MoveOutComeSafe || moveOutCome == gamelogic.MoveOutcomeMakeWar{
+			return pubsub.Ack
+		}
+		return pubsub.NackDiscard
 	}
 }
 

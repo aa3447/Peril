@@ -1,9 +1,11 @@
 package pubsub
 
 import (
-	"fmt"
 	"encoding/json"
+	"fmt"
+	"log"
 
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -11,6 +13,13 @@ type SimpleQueueType int
 const (
 	QueueTypeDurable   SimpleQueueType = 1
 	QueueTypeTransient SimpleQueueType = 2
+)
+
+type AnkType int
+const (
+	Ack AnkType = 1
+	NackRequeue AnkType = 2
+	NackDiscard AnkType = 3
 )
 
 func DeclareAndBindQueue(
@@ -40,8 +49,10 @@ func DeclareAndBindQueue(
 			return nil, amqp.Queue{}, fmt.Errorf("unknown queue type: %v", queueType)
 	}
 
-	
-	queue, err := channel.QueueDeclare(queueName,durable,autoDelete,exclusive,false,nil)
+	args := amqp.Table{
+		"x-dead-letter-exchange": routing.ExchangePerilDLX,
+	}
+	queue, err := channel.QueueDeclare(queueName,durable,autoDelete,exclusive,false,args)
 	if err != nil {
 		return nil, amqp.Queue{}, fmt.Errorf("failed to declare queue: %v", err)
 	}
@@ -63,8 +74,8 @@ func SubscribeJSON[T any](
     queueName,
     key string,
     queueType SimpleQueueType, // an enum to represent "durable" or "transient"
-    handler func(T),
-) error {
+    handler func(T)(AnkType),
+)  error {
 	channel, queue, err := DeclareAndBindQueue(conn, exchange, queueName, key, queueType)
 	if err != nil {
 		return fmt.Errorf("failed to declare and bind queue: %v", err)
@@ -80,7 +91,7 @@ func SubscribeJSON[T any](
 		nil,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to receive messages: %v", err)
+		return  fmt.Errorf("failed to receive messages: %v", err) 
 	}
 
 	go func(){
@@ -92,8 +103,18 @@ func SubscribeJSON[T any](
 				msg.Nack(false, false)
 				continue
 			}
-			handler(genericMsgStruct)
-			msg.Ack(false)
+			ank := handler(genericMsgStruct)
+			switch ank{
+				case Ack:
+					msg.Ack(false)
+					log.Println("Message processed and acknowledged.")
+				case NackRequeue:
+					msg.Nack(false, true)
+					log.Println("Message processing failed, message requeued.")
+				case NackDiscard:
+					msg.Nack(false, false)
+					log.Println("Message processing failed, message discarded.")
+			}
 		}
 	}()
 
